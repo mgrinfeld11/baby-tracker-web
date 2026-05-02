@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}History &middot; Baby Tracker{% endblock %}
+{% block content %}
+
+<section class="card">
+    <h1>History</h1>
+    <nav class="tabs">
+        <a class="tab {{ 'active' if kind == 'sleep' else '' }}"
+           href="{{ url_for('history', kind='sleep') }}">Sleep</a>
+        <a class="tab {{ 'active' if kind == 'feed' else '' }}"
+           href="{{ url_for('history', kind='feed') }}">Feeds</a>
+        <a class="tab {{ 'active' if kind == 'diaper' else '' }}"
+           href="{{ url_for('history', kind='diaper') }}">Diapers</a>
+    </nav>
+
+    <div class="export-row">
+        {% if kind == 'sleep' %}
+            <a class="btn btn-secondary"
+               href="{{ url_for('export', table='sleep_sessions') }}">Export sleep CSV</a>
+        {% elif kind == 'feed' %}
+            <a class="btn btn-secondary"
+               href="{{ url_for('export', table='feeds') }}">Export feeds CSV</a>
+        {% else %}
+            <a class="btn btn-secondary"
+               href="{{ url_for('export', table='diaper_changes') }}">Export diapers CSV</a>
+        {% endif %}
+    </div>
+
+    {% if entries %}
+    <div class="table-wrap">
+        <table class="entries">
+            <thead>
+                <tr>
+                    {% if kind == 'sleep' %}
+                        <th>Location</th><th>Start</th><th>End</th>
+                        <th>Duration</th><th>Notes</th><th></th>
+                    {% elif kind == 'feed' %}
+                        <th>Time</th><th>Type</th><th>Amount</th>
+                        <th>Duration</th><th>Side</th><th>Notes</th><th></th>
+                    {% else %}
+                        <th>Time</th><th>Type</th><th>Notes</th><th></th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in entries %}
+                <tr>
+                    {% if kind == 'sleep' %}
+                        <td>{{ r.location }}</td>
+                        <td>{{ r.start_time }}</td>
+                        <td>{{ r.end_time or '(in progress)' }}</td>
+                        <td>{{ fmt_minutes(r.duration_minutes) }}</td>
+                        <td>{{ r.notes or '' }}</td>
+                    {% elif kind == 'feed' %}
+                        <td>{{ r.feed_time }}</td>
+                        <td>{{ r.feed_type }}</td>
+                        <td>{{ ('%.0f ml' | format(r.amount_ml)) if r.amount_ml else '' }}</td>
+                        <td>{{ fmt_minutes(r.duration_minutes) if r.duration_minutes else '' }}</td>
+                        <td>{{ r.side or '' }}</td>
+                        <td>{{ r.notes or '' }}</td>
+                    {% else %}
+                        <td>{{ r.change_time }}</td>
+                        <td>{{ r.diaper_type }}</td>
+                        <td>{{ r.notes or '' }}</td>
+                    {% endif %}
+                    <td>
+                        <form method="post"
+                              action="{{ url_for('delete', kind=kind, entry_id=r.id) }}"
+                              onsubmit="return confirm('Delete this entry?');"
+                              class="inline-form">
+                            <button type="submit" class="link-btn danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <p class="muted">No {{ kind }} entries yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

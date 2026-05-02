@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# App data — never commit the live database!
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+
+pythonanywhere_wsgi.py

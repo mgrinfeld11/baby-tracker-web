@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Today &middot; Baby Tracker{% endblock %}
+{% block content %}
+
+<!-- ============== Active sleep timer ============== -->
+<section class="card">
+    <h2>Sleep</h2>
+    {% if open_sleep %}
+        <div class="timer-active">
+            <p class="timer-label">Sleeping in <strong>{{ open_sleep.location }}</strong></p>
+            <p class="timer-since" data-start="{{ open_sleep.start_time }}">
+                since {{ open_sleep.start_time }}
+            </p>
+            <p class="timer-elapsed" id="elapsed">—</p>
+            <form method="post" action="{{ url_for('sleep_stop', session_id=open_sleep.id) }}">
+                <button type="submit" class="btn btn-danger btn-lg">Stop sleep</button>
+            </form>
+        </div>
+    {% else %}
+        <form method="post" action="{{ url_for('sleep_start') }}" class="quick-form">
+            <label>
+                Where?
+                <select name="location" required>
+                    {% for loc in sleep_locations %}
+                        <option value="{{ loc }}">{{ loc }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit" class="btn btn-primary btn-lg">Start sleep</button>
+        </form>
+    {% endif %}
+
+    <details class="manual-entry">
+        <summary>Log a finished sleep manually</summary>
+        <form method="post" action="{{ url_for('sleep_manual') }}" class="stacked-form">
+            <label>Location
+                <select name="location" required>
+                    {% for loc in sleep_locations %}<option>{{ loc }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Start (YYYY-MM-DD HH:MM:SS)
+                <input type="text" name="start_time" required>
+            </label>
+            <label>End (YYYY-MM-DD HH:MM:SS)
+                <input type="text" name="end_time" value="{{ now }}" required>
+            </label>
+            <label>Notes
+                <input type="text" name="notes">
+            </label>
+            <button type="submit" class="btn btn-secondary">Save sleep</button>
+        </form>
+    </details>
+</section>
+
+<!-- ============== Feed ============== -->
+<section class="card">
+    <h2>Feed</h2>
+    <form method="post" action="{{ url_for('feed_add') }}" class="stacked-form">
+        <div class="row">
+            <label>Type
+                <select name="feed_type" required>
+                    {% for t in feed_types %}<option>{{ t }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Side (breast)
+                <select name="side">
+                    {% for s in sides %}<option value="{{ s }}">{{ s or '—' }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="row">
+            <label>Amount (ml)
+                <input type="number" name="amount_ml" step="any" min="0" inputmode="decimal">
+            </label>
+            <label>Duration (min)
+                <input type="number" name="duration_minutes" step="any" min="0" inputmode="decimal">
+            </label>
+        </div>
+        <label>Time
+            <input type="text" name="feed_time" value="{{ now }}">
+        </label>
+        <label>Notes
+            <input type="text" name="notes">
+        </label>
+        <button type="submit" class="btn btn-primary btn-lg">Log feed</button>
+    </form>
+</section>
+
+<!-- ============== Diaper ============== -->
+<section class="card">
+    <h2>Diaper</h2>
+    <p class="muted">Quick log right now:</p>
+    <div class="quick-row">
+        {% for t in diaper_types %}
+        <form method="post" action="{{ url_for('diaper_add') }}" class="inline-form">
+            <input type="hidden" name="diaper_type" value="{{ t }}">
+            <button type="submit" class="btn btn-secondary btn-lg">{{ t.capitalize() }}</button>
+        </form>
+        {% endfor %}
+    </div>
+
+    <details class="manual-entry">
+        <summary>Log with notes / different time</summary>
+        <form method="post" action="{{ url_for('diaper_add') }}" class="stacked-form">
+            <label>Type
+                <select name="diaper_type">
+                    {% for t in diaper_types %}<option>{{ t }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Time
+                <input type="text" name="change_time" value="{{ now }}">
+            </label>
+            <label>Notes
+                <input type="text" name="notes">
+            </label>
+            <button type="submit" class="btn btn-secondary">Save diaper</button>
+        </form>
+    </details>
+</section>
+
+<!-- ============== Today's summary ============== -->
+<section class="card">
+    <h2>Today so far</h2>
+    <div class="summary-grid">
+        <div class="metric">
+            <div class="metric-num">{{ fmt_minutes(summary.sleep_minutes) }}</div>
+            <div class="metric-label">slept ({{ summary.sleep_count }} sessions)</div>
+        </div>
+        <div class="metric">
+            <div class="metric-num">{{ summary.feed_count }}</div>
+            <div class="metric-label">
+                feeds
+                {% if summary.feed_total_ml %}({{ '%.0f' | format(summary.feed_total_ml) }} ml){% endif %}
+            </div>
+        </div>
+        <div class="metric">
+            <div class="metric-num">{{ summary.diaper_count }}</div>
+            <div class="metric-label">diapers</div>
+        </div>
+    </div>
+    <p class="muted">
+        <a href="{{ url_for('summary') }}">See full summary &rarr;</a>
+    </p>
+</section>
+
+<!-- ============== Recent entries ============== -->
+<section class="card">
+    <h2>Recent</h2>
+    <h3>Sleep</h3>
+    {% if recent.sleep %}
+        <ul class="entry-list">
+            {% for r in recent.sleep %}
+            <li>
+                <strong>{{ r.location }}</strong> — {{ r.start_time }}
+                {% if r.duration_minutes is not none %}
+                    · {{ fmt_minutes(r.duration_minutes) }}
+                {% else %}· in progress{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}<p class="muted">No sleep entries yet.</p>{% endif %}
+
+    <h3>Feeds</h3>
+    {% if recent.feeds %}
+        <ul class="entry-list">
+            {% for r in recent.feeds %}
+            <li>
+                <strong>{{ r.feed_type }}</strong>{% if r.side %} ({{ r.side }}){% endif %}
+                — {{ r.feed_time }}
+                {% if r.amount_ml %} · {{ '%.0f' | format(r.amount_ml) }} ml{% endif %}
+                {% if r.duration_minutes %} · {{ fmt_minutes(r.duration_minutes) }}{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}<p class="muted">No feed entries yet.</p>{% endif %}
+
+    <h3>Diapers</h3>
+    {% if recent.diapers %}
+        <ul class="entry-list">
+            {% for r in recent.diapers %}
+            <li><strong>{{ r.diaper_type }}</strong> — {{ r.change_time }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}<p class="muted">No diaper entries yet.</p>{% endif %}
+
+    <p class="muted"><a href="{{ url_for('history') }}">See full history &rarr;</a></p>
+</section>
+
+{% if open_sleep %}
+<script>
+(function(){
+    const startStr = {{ open_sleep.start_time | tojson }};
+    // Treat the stored "YYYY-MM-DD HH:MM:SS" as local time
+    const start = new Date(startStr.replace(' ', 'T'));
+    const el = document.getElementById('elapsed');
+    function tick(){
+        const mins = (Date.now() - start.getTime()) / 60000;
+        const h = Math.floor(mins / 60);
+        const m = Math.floor(mins - h*60);
+        const s = Math.floor((mins - Math.floor(mins)) * 60);
+        el.textContent = (h ? h+'h ' : '') + m + 'm ' + String(s).padStart(2,'0') + 's';
+    }
+    tick();
+    setInterval(tick, 1000);
+})();
+</script>
+{% endif %}
+
+{% endblock %}

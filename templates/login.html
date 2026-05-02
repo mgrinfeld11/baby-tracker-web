@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Log in &middot; Baby Tracker{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h1>Log in</h1>
+    <form method="post" action="{{ url_for('login') }}">
+        <label>
+            Email
+            <input type="email" name="email" autocomplete="username"
+                   value="{{ email or '' }}" required autofocus>
+        </label>
+        <label>
+            Password
+            <input type="password" name="password"
+                   autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-lg">Log in</button>
+    </form>
+    <p class="muted">No account yet?
+        <a href="{{ url_for('register') }}">Create one</a>.
+    </p>
+</div>
+{% endblock %}

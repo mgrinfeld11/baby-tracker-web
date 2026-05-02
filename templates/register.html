@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Create account &middot; Baby Tracker{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h1>Create your account</h1>
+    <p class="muted">
+        Tip: both parents can use the same login from any device — just share the password.
+    </p>
+    <form method="post" action="{{ url_for('register') }}">
+        <label>
+            Display name (optional)
+            <input type="text" name="display_name"
+                   value="{{ display_name or '' }}">
+        </label>
+        <label>
+            Email
+            <input type="email" name="email" autocomplete="username"
+                   value="{{ email or '' }}" required>
+        </label>
+        <label>
+            Password (6+ characters)
+            <input type="password" name="password"
+                   autocomplete="new-password" minlength="6" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-lg">Create account</button>
+    </form>
+    <p class="muted">Already have an account?
+        <a href="{{ url_for('login') }}">Log in</a>.
+    </p>
+</div>
+{% endblock %}

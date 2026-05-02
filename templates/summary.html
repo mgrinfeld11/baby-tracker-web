@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Daily summary &middot; Baby Tracker{% endblock %}
+{% block content %}
+<section class="card">
+    <h1>Daily summary</h1>
+    <form method="get" action="{{ url_for('summary') }}" class="date-form">
+        <label>
+            Date
+            <input type="date" name="date" value="{{ date_str }}">
+        </label>
+        <button type="submit" class="btn btn-secondary">Show</button>
+    </form>
+
+    <h2>{{ summary.date }}</h2>
+
+    <div class="summary-grid">
+        <div class="metric">
+            <div class="metric-num">{{ fmt_minutes(summary.sleep_minutes) }}</div>
+            <div class="metric-label">total sleep ({{ summary.sleep_count }} sessions)</div>
+        </div>
+        <div class="metric">
+            <div class="metric-num">{{ summary.feed_count }}</div>
+            <div class="metric-label">
+                feeds
+                {% if summary.feed_total_ml %}({{ '%.0f' | format(summary.feed_total_ml) }} ml total){% endif %}
+            </div>
+        </div>
+        <div class="metric">
+            <div class="metric-num">{{ summary.diaper_count }}</div>
+            <div class="metric-label">diaper changes</div>
+        </div>
+    </div>
+
+    {% if summary.feed_breakdown %}
+    <h3>Feeds by type</h3>
+    <ul class="entry-list">
+        {% for k, n in summary.feed_breakdown.items() %}
+            <li><strong>{{ k }}</strong>: {{ n }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if summary.diaper_breakdown %}
+    <h3>Diapers by type</h3>
+    <ul class="entry-list">
+        {% for k, n in summary.diaper_breakdown.items() %}
+            <li><strong>{{ k }}</strong>: {{ n }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+{% endblock %}
