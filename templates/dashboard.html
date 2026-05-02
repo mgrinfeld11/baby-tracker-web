@@ -2,28 +2,49 @@
 {% block title %}Today &middot; Baby Tracker{% endblock %}
 {% block content %}
 
-<!-- ============== Active sleep timer ============== -->
+<!-- Next feed countdown -->
+<section class="card next-feed-card"
+         id="next-feed-panel"
+         data-next-feed-utc="{{ reminder_state.next_feed_utc or '' }}"
+         data-reminder-utc="{{ reminder_state.reminder_at_utc or '' }}"
+         data-interval="{{ reminder_state.interval_min }}"
+         data-lead="{{ reminder_state.lead_min }}"
+         data-notifications-on="{{ '1' if reminder_state.notifications_on else '0' }}">
+    <div class="next-feed-row">
+        <div>
+            <div class="next-feed-label">Next feed</div>
+            <div class="next-feed-time" id="next-feed-local">--</div>
+            <div class="next-feed-status" id="next-feed-status">--</div>
+        </div>
+        <div class="next-feed-countdown" id="next-feed-countdown">--</div>
+    </div>
+    <p class="muted small">
+        Every {{ reminder_state.interval_min }} min &middot;
+        remind {{ reminder_state.lead_min }} min before &middot;
+        <a href="{{ url_for('settings_view') }}">change</a>
+    </p>
+</section>
+
+<!-- Active sleep timer -->
 <section class="card">
     <h2>Sleep</h2>
     {% if open_sleep %}
         <div class="timer-active">
             <p class="timer-label">Sleeping in <strong>{{ open_sleep.location }}</strong></p>
-            <p class="timer-since" data-start="{{ open_sleep.start_time }}">
-                since {{ open_sleep.start_time }}
+            <p class="timer-since">
+                since <time data-utc="{{ open_sleep.start_time }}" data-fmt="time"></time>
             </p>
-            <p class="timer-elapsed" id="elapsed">—</p>
+            <p class="timer-elapsed" id="sleep-elapsed"
+               data-start-utc="{{ open_sleep.start_time }}">--</p>
             <form method="post" action="{{ url_for('sleep_stop', session_id=open_sleep.id) }}">
                 <button type="submit" class="btn btn-danger btn-lg">Stop sleep</button>
             </form>
         </div>
     {% else %}
         <form method="post" action="{{ url_for('sleep_start') }}" class="quick-form">
-            <label>
-                Where?
+            <label>Where?
                 <select name="location" required>
-                    {% for loc in sleep_locations %}
-                        <option value="{{ loc }}">{{ loc }}</option>
-                    {% endfor %}
+                    {% for loc in sleep_locations %}<option>{{ loc }}</option>{% endfor %}
                 </select>
             </label>
             <button type="submit" class="btn btn-primary btn-lg">Start sleep</button>
@@ -32,17 +53,20 @@
 
     <details class="manual-entry">
         <summary>Log a finished sleep manually</summary>
-        <form method="post" action="{{ url_for('sleep_manual') }}" class="stacked-form">
+        <form method="post" action="{{ url_for('sleep_manual') }}"
+              class="stacked-form" data-utc-convert>
             <label>Location
                 <select name="location" required>
                     {% for loc in sleep_locations %}<option>{{ loc }}</option>{% endfor %}
                 </select>
             </label>
-            <label>Start (YYYY-MM-DD HH:MM:SS)
-                <input type="text" name="start_time" required>
+            <label>Start
+                <input type="datetime-local" name="start_time"
+                       data-prefill="sleep-start" required>
             </label>
-            <label>End (YYYY-MM-DD HH:MM:SS)
-                <input type="text" name="end_time" value="{{ now }}" required>
+            <label>End
+                <input type="datetime-local" name="end_time"
+                       data-prefill="sleep-end" required>
             </label>
             <label>Notes
                 <input type="text" name="notes">
@@ -52,32 +76,62 @@
     </details>
 </section>
 
-<!-- ============== Feed ============== -->
+<!-- Sleep stats -->
+<section class="card">
+    <h2>Sleep -- last 7 days</h2>
+    {% set max_min = 1 %}
+    {% for d in sleep_chart %}{% if d.minutes > max_min %}{% set max_min = d.minutes %}{% endif %}{% endfor %}
+    <div class="chart-bars">
+        {% for d in sleep_chart %}
+            {% set pct = (d.minutes / max_min * 100) if max_min > 0 else 0 %}
+            <div class="bar-col" title="{{ d.date }}: {{ fmt_minutes(d.minutes) }}">
+                <div class="bar-track">
+                    <div class="bar-fill" style="height: {{ '%.1f' | format(pct) }}%"></div>
+                </div>
+                <div class="bar-label">{{ d.date[5:] }}</div>
+                <div class="bar-value">{{ fmt_minutes(d.minutes) }}</div>
+            </div>
+        {% endfor %}
+    </div>
+    <h3 style="margin-top:18px">Recent sessions</h3>
+    {% if recent.sleep %}
+        <ul class="entry-list">
+            {% for r in recent.sleep %}
+            <li>
+                <strong>{{ r.location }}</strong> --
+                <time data-utc="{{ r.start_time }}"></time>
+                {% if r.duration_minutes is not none %}
+                    &middot; {{ fmt_minutes(r.duration_minutes) }}
+                {% else %}&middot; in progress{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}<p class="muted">No sleep entries yet.</p>{% endif %}
+</section>
+
+<!-- Feed -->
 <section class="card">
     <h2>Feed</h2>
-    <form method="post" action="{{ url_for('feed_add') }}" class="stacked-form">
-        <div class="row">
-            <label>Type
-                <select name="feed_type" required>
-                    {% for t in feed_types %}<option>{{ t }}</option>{% endfor %}
-                </select>
-            </label>
-            <label>Side (breast)
-                <select name="side">
-                    {% for s in sides %}<option value="{{ s }}">{{ s or '—' }}</option>{% endfor %}
-                </select>
-            </label>
-        </div>
-        <div class="row">
-            <label>Amount (ml)
-                <input type="number" name="amount_ml" step="any" min="0" inputmode="decimal">
-            </label>
-            <label>Duration (min)
-                <input type="number" name="duration_minutes" step="any" min="0" inputmode="decimal">
-            </label>
-        </div>
-        <label>Time
-            <input type="text" name="feed_time" value="{{ now }}">
+    <form method="post" action="{{ url_for('feed_add') }}"
+          class="stacked-form" data-form="feed" data-utc-convert>
+        <label>Type
+            <select name="feed_type" required>
+                {% for t in feed_types %}<option>{{ t }}</option>{% endfor %}
+            </select>
+        </label>
+        <label data-field="amount_oz">Amount (oz)
+            <input type="number" name="amount_oz" step="0.1" min="0" inputmode="decimal">
+        </label>
+        <label data-field="duration_minutes">Duration (min)
+            <input type="number" name="duration_minutes" step="any" min="0" inputmode="decimal">
+        </label>
+        <label data-field="side">Side
+            <select name="side">
+                {% for s in sides %}<option value="{{ s }}">{{ s or '--' }}</option>{% endfor %}
+            </select>
+        </label>
+        <label>Time (leave blank for now)
+            <input type="datetime-local" name="feed_time">
         </label>
         <label>Notes
             <input type="text" name="notes">
@@ -86,7 +140,7 @@
     </form>
 </section>
 
-<!-- ============== Diaper ============== -->
+<!-- Diaper -->
 <section class="card">
     <h2>Diaper</h2>
     <p class="muted">Quick log right now:</p>
@@ -101,14 +155,15 @@
 
     <details class="manual-entry">
         <summary>Log with notes / different time</summary>
-        <form method="post" action="{{ url_for('diaper_add') }}" class="stacked-form">
+        <form method="post" action="{{ url_for('diaper_add') }}"
+              class="stacked-form" data-utc-convert>
             <label>Type
                 <select name="diaper_type">
                     {% for t in diaper_types %}<option>{{ t }}</option>{% endfor %}
                 </select>
             </label>
             <label>Time
-                <input type="text" name="change_time" value="{{ now }}">
+                <input type="datetime-local" name="change_time">
             </label>
             <label>Notes
                 <input type="text" name="notes">
@@ -118,9 +173,9 @@
     </details>
 </section>
 
-<!-- ============== Today's summary ============== -->
+<!-- Today summary -->
 <section class="card">
-    <h2>Today so far</h2>
+    <h2>Today (UTC) so far</h2>
     <div class="summary-grid">
         <div class="metric">
             <div class="metric-num">{{ fmt_minutes(summary.sleep_minutes) }}</div>
@@ -130,7 +185,7 @@
             <div class="metric-num">{{ summary.feed_count }}</div>
             <div class="metric-label">
                 feeds
-                {% if summary.feed_total_ml %}({{ '%.0f' | format(summary.feed_total_ml) }} ml){% endif %}
+                {% if summary.feed_total_oz %}({{ '%.1f' | format(summary.feed_total_oz) }} oz){% endif %}
             </div>
         </div>
         <div class="metric">
@@ -138,37 +193,23 @@
             <div class="metric-label">diapers</div>
         </div>
     </div>
-    <p class="muted">
+    <p class="muted small">
         <a href="{{ url_for('summary') }}">See full summary &rarr;</a>
     </p>
 </section>
 
-<!-- ============== Recent entries ============== -->
+<!-- Recent feeds + diapers -->
 <section class="card">
     <h2>Recent</h2>
-    <h3>Sleep</h3>
-    {% if recent.sleep %}
-        <ul class="entry-list">
-            {% for r in recent.sleep %}
-            <li>
-                <strong>{{ r.location }}</strong> — {{ r.start_time }}
-                {% if r.duration_minutes is not none %}
-                    · {{ fmt_minutes(r.duration_minutes) }}
-                {% else %}· in progress{% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-    {% else %}<p class="muted">No sleep entries yet.</p>{% endif %}
-
     <h3>Feeds</h3>
     {% if recent.feeds %}
         <ul class="entry-list">
             {% for r in recent.feeds %}
             <li>
                 <strong>{{ r.feed_type }}</strong>{% if r.side %} ({{ r.side }}){% endif %}
-                — {{ r.feed_time }}
-                {% if r.amount_ml %} · {{ '%.0f' | format(r.amount_ml) }} ml{% endif %}
-                {% if r.duration_minutes %} · {{ fmt_minutes(r.duration_minutes) }}{% endif %}
+                -- <time data-utc="{{ r.feed_time }}"></time>
+                {% if r.amount_oz %} &middot; {{ '%.1f' | format(r.amount_oz) }} oz{% endif %}
+                {% if r.duration_minutes %} &middot; {{ fmt_minutes(r.duration_minutes) }}{% endif %}
             </li>
             {% endfor %}
         </ul>
@@ -178,32 +219,13 @@
     {% if recent.diapers %}
         <ul class="entry-list">
             {% for r in recent.diapers %}
-            <li><strong>{{ r.diaper_type }}</strong> — {{ r.change_time }}</li>
+            <li><strong>{{ r.diaper_type }}</strong> --
+                <time data-utc="{{ r.change_time }}"></time></li>
             {% endfor %}
         </ul>
     {% else %}<p class="muted">No diaper entries yet.</p>{% endif %}
 
-    <p class="muted"><a href="{{ url_for('history') }}">See full history &rarr;</a></p>
+    <p class="muted small"><a href="{{ url_for('history') }}">See full history &rarr;</a></p>
 </section>
-
-{% if open_sleep %}
-<script>
-(function(){
-    const startStr = {{ open_sleep.start_time | tojson }};
-    // Treat the stored "YYYY-MM-DD HH:MM:SS" as local time
-    const start = new Date(startStr.replace(' ', 'T'));
-    const el = document.getElementById('elapsed');
-    function tick(){
-        const mins = (Date.now() - start.getTime()) / 60000;
-        const h = Math.floor(mins / 60);
-        const m = Math.floor(mins - h*60);
-        const s = Math.floor((mins - Math.floor(mins)) * 60);
-        el.textContent = (h ? h+'h ' : '') + m + 'm ' + String(s).padStart(2,'0') + 's';
-    }
-    tick();
-    setInterval(tick, 1000);
-})();
-</script>
-{% endif %}
 
 {% endblock %}

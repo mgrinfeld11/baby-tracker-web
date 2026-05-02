@@ -47,19 +47,20 @@
                 <tr>
                     {% if kind == 'sleep' %}
                         <td>{{ r.location }}</td>
-                        <td>{{ r.start_time }}</td>
-                        <td>{{ r.end_time or '(in progress)' }}</td>
+                        <td><time data-utc="{{ r.start_time }}"></time></td>
+                        <td>{% if r.end_time %}<time data-utc="{{ r.end_time }}"></time>
+                            {% else %}(in progress){% endif %}</td>
                         <td>{{ fmt_minutes(r.duration_minutes) }}</td>
                         <td>{{ r.notes or '' }}</td>
                     {% elif kind == 'feed' %}
-                        <td>{{ r.feed_time }}</td>
+                        <td><time data-utc="{{ r.feed_time }}"></time></td>
                         <td>{{ r.feed_type }}</td>
-                        <td>{{ ('%.0f ml' | format(r.amount_ml)) if r.amount_ml else '' }}</td>
+                        <td>{{ ('%.1f oz' | format(r.amount_oz)) if r.amount_oz else '' }}</td>
                         <td>{{ fmt_minutes(r.duration_minutes) if r.duration_minutes else '' }}</td>
                         <td>{{ r.side or '' }}</td>
                         <td>{{ r.notes or '' }}</td>
                     {% else %}
-                        <td>{{ r.change_time }}</td>
+                        <td><time data-utc="{{ r.change_time }}"></time></td>
                         <td>{{ r.diaper_type }}</td>
                         <td>{{ r.notes or '' }}</td>
                     {% endif %}

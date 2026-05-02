@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-vapid-pubkey="{{ vapid_public_key }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#5b8def">
     <title>{% block title %}Baby Tracker{% endblock %}</title>
+    <link rel="manifest" href="{{ url_for('manifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon-192.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -17,6 +20,7 @@
         <a href="{{ url_for('dashboard') }}">Today</a>
         <a href="{{ url_for('history') }}">History</a>
         <a href="{{ url_for('summary') }}">Summary</a>
+        <a href="{{ url_for('settings_view') }}">Settings</a>
         <form action="{{ url_for('logout') }}" method="post" class="inline-form">
             <button type="submit" class="link-btn">Log out</button>
         </form>
@@ -41,5 +45,7 @@
 <footer class="footer">
     <small>Baby Tracker &middot; data stays on your server</small>
 </footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

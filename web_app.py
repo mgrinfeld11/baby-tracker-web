@@ -1,23 +1,16 @@
 """
-web_app.py - Flask web app for Baby Tracker.
-
-Run locally:
-    pip install -r requirements.txt
-    export FLASK_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-    python web_app.py
-
-In production, gunicorn picks it up via the Procfile:
-    gunicorn web_app:app
+web_app.py - Flask web app for Baby Tracker (multi-user, PWA + Web Push).
 """
 
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
-from flask import (Flask, Response, abort, flash, g, redirect,
-                   render_template, request, session, url_for)
+from flask import (Flask, Response, abort, flash, g, jsonify,
+                   redirect, render_template, request, send_from_directory,
+                   session, url_for)
 
 import web_db as db
 
@@ -29,18 +22,12 @@ SIDES = ["", "left", "right", "both"]
 DIAPER_TYPES = ["wet", "dirty", "both"]
 
 
-def create_app() -> Flask:
+def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get(
-        "FLASK_SECRET_KEY",
-        # Dev fallback. Set FLASK_SECRET_KEY in production!
-        "dev-only-not-secret-please-override",
-    )
+        "FLASK_SECRET_KEY", "dev-only-not-secret-please-override")
     app.jinja_env.globals["fmt_minutes"] = fmt_minutes
-
     db.init_db()
-
-    # ---- helpers ----
 
     def login_required(view):
         @wraps(view)
@@ -59,10 +46,11 @@ def create_app() -> Flask:
             if g.user is None:
                 session.clear()
 
-    # =========================================================
-    # Auth
-    # =========================================================
+    @app.context_processor
+    def inject_globals():
+        return {"vapid_public_key": os.environ.get("VAPID_PUBLIC_KEY", "")}
 
+    # ----- Auth -----
     @app.route("/register", methods=["GET", "POST"])
     def register():
         if request.method == "POST":
@@ -99,37 +87,28 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
-    # =========================================================
-    # Dashboard (the main quick-log page)
-    # =========================================================
-
+    # ----- Dashboard -----
     @app.route("/")
     @login_required
     def dashboard():
         uid = session["user_id"]
-        open_sleep = db.get_open_sleep_session(uid)
-        summary = db.daily_summary(uid)
-        recent = {
-            "sleep": db.list_sleep(uid, limit=5),
-            "feeds": db.list_feeds(uid, limit=5),
-            "diapers": db.list_diapers(uid, limit=5),
-        }
         return render_template(
             "dashboard.html",
-            open_sleep=open_sleep,
-            summary=summary,
-            recent=recent,
+            open_sleep=db.get_open_sleep_session(uid),
+            summary=db.daily_summary(uid),
+            recent={
+                "sleep": db.list_sleep(uid, limit=5),
+                "feeds": db.list_feeds(uid, limit=5),
+                "diapers": db.list_diapers(uid, limit=5),
+            },
+            sleep_chart=db.sleep_minutes_per_day(uid, days=7),
+            reminder_state=db.compute_reminder_state(uid),
             sleep_locations=SLEEP_LOCATIONS,
-            feed_types=FEED_TYPES,
-            sides=SIDES,
-            diaper_types=DIAPER_TYPES,
-            now=db.now_iso(),
+            feed_types=FEED_TYPES, sides=SIDES, diaper_types=DIAPER_TYPES,
+            now_utc=db.now_iso_utc(),
         )
 
-    # =========================================================
-    # Sleep
-    # =========================================================
-
+    # ----- Sleep -----
     @app.route("/sleep/start", methods=["POST"])
     @login_required
     def sleep_start():
@@ -146,7 +125,7 @@ def create_app() -> Flask:
         uid = session["user_id"]
         try:
             mins = db.stop_sleep(uid, session_id)
-            flash(f"Sleep ended — {fmt_minutes(mins)}.", "ok")
+            flash(f"Sleep ended -- {fmt_minutes(mins)}.", "ok")
         except ValueError as e:
             flash(str(e), "error")
         return redirect(url_for("dashboard"))
@@ -168,24 +147,19 @@ def create_app() -> Flask:
             flash(str(e), "error")
         return redirect(url_for("dashboard"))
 
-    # =========================================================
-    # Feed
-    # =========================================================
-
+    # ----- Feed -----
     @app.route("/feed/add", methods=["POST"])
     @login_required
     def feed_add():
         uid = session["user_id"]
-
         def parse_float(name):
             v = (request.form.get(name) or "").strip()
             return float(v) if v else None
-
         try:
             db.add_feed(
                 uid,
                 feed_type=request.form.get("feed_type", ""),
-                amount_ml=parse_float("amount_ml"),
+                amount_oz=parse_float("amount_oz"),
                 duration_minutes=parse_float("duration_minutes"),
                 side=request.form.get("side") or None,
                 feed_time=request.form.get("feed_time", "").strip() or None,
@@ -196,10 +170,7 @@ def create_app() -> Flask:
             flash(str(e), "error")
         return redirect(url_for("dashboard"))
 
-    # =========================================================
-    # Diaper
-    # =========================================================
-
+    # ----- Diaper -----
     @app.route("/diaper/add", methods=["POST"])
     @login_required
     def diaper_add():
@@ -216,10 +187,7 @@ def create_app() -> Flask:
             flash(str(e), "error")
         return redirect(url_for("dashboard"))
 
-    # =========================================================
-    # History
-    # =========================================================
-
+    # ----- History + delete -----
     @app.route("/history")
     @login_required
     def history():
@@ -244,28 +212,45 @@ def create_app() -> Flask:
             abort(400)
         return redirect(request.referrer or url_for("dashboard"))
 
-    # =========================================================
-    # Daily summary (separate page; dashboard also shows today's)
-    # =========================================================
-
+    # ----- Daily summary -----
     @app.route("/summary")
     @login_required
     def summary():
         uid = session["user_id"]
-        date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+        date_str = request.args.get("date") or db.now_utc().strftime("%Y-%m-%d")
         try:
-            day = datetime.strptime(date_str, "%Y-%m-%d")
+            day = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
-            flash("Bad date — use YYYY-MM-DD.", "error")
-            day = datetime.now()
+            flash("Bad date -- use YYYY-MM-DD.", "error")
+            day = db.now_utc()
             date_str = day.strftime("%Y-%m-%d")
         s = db.daily_summary(uid, day)
         return render_template("summary.html", summary=s, date_str=date_str)
 
-    # =========================================================
-    # CSV export
-    # =========================================================
+    # ----- Settings -----
+    @app.route("/settings", methods=["GET", "POST"])
+    @login_required
+    def settings_view():
+        uid = session["user_id"]
+        if request.method == "POST":
+            try:
+                db.update_settings(
+                    uid,
+                    feed_interval_min=int(request.form.get("feed_interval_min", 180)),
+                    reminder_lead_min=int(request.form.get("reminder_lead_min", 20)),
+                    notifications_on=bool(request.form.get("notifications_on")),
+                )
+                flash("Settings saved.", "ok")
+            except ValueError as e:
+                flash(str(e), "error")
+            return redirect(url_for("settings_view"))
+        return render_template(
+            "settings.html",
+            settings=db.get_settings(uid),
+            subscription_count=len(db.list_push_subscriptions(uid)),
+        )
 
+    # ----- CSV export -----
     @app.route("/export/<table>")
     @login_required
     def export(table):
@@ -274,17 +259,98 @@ def create_app() -> Flask:
             data = db.export_table_csv(uid, table)
         except ValueError:
             abort(404)
-        return Response(
-            data,
-            mimetype="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{table}.csv"',
-            },
-        )
+        return Response(data, mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{table}.csv"'})
 
-    # =========================================================
-    # Health check (useful for hosts)
-    # =========================================================
+    # ----- PWA: manifest + service worker -----
+    @app.route("/manifest.json")
+    def manifest():
+        return jsonify({
+            "name": "Baby Tracker", "short_name": "Baby",
+            "description": "Track baby sleep, feeds, and diapers.",
+            "start_url": "/", "scope": "/",
+            "display": "standalone", "orientation": "portrait",
+            "background_color": "#f7f8fb", "theme_color": "#5b8def",
+            "icons": [
+                {"src": "/static/icon-192.png", "sizes": "192x192",
+                 "type": "image/png", "purpose": "any maskable"},
+                {"src": "/static/icon-512.png", "sizes": "512x512",
+                 "type": "image/png", "purpose": "any maskable"},
+            ],
+        })
+
+    @app.route("/sw.js")
+    def service_worker():
+        return send_from_directory(app.static_folder, "sw.js",
+            mimetype="application/javascript", max_age=0)
+
+    # ----- Push subscription -----
+    @app.route("/push/subscribe", methods=["POST"])
+    @login_required
+    def push_subscribe():
+        uid = session["user_id"]
+        body = request.get_json(silent=True) or {}
+        try:
+            endpoint = body["endpoint"]
+            p256dh = body["keys"]["p256dh"]
+            auth = body["keys"]["auth"]
+        except (KeyError, TypeError):
+            return jsonify({"ok": False, "error": "bad subscription"}), 400
+        ua = request.headers.get("User-Agent", "")[:300]
+        db.save_push_subscription(uid, endpoint, p256dh, auth, ua)
+        return jsonify({"ok": True})
+
+    @app.route("/push/unsubscribe", methods=["POST"])
+    @login_required
+    def push_unsubscribe():
+        body = request.get_json(silent=True) or {}
+        endpoint = body.get("endpoint")
+        if endpoint:
+            db.delete_push_subscription(endpoint)
+        return jsonify({"ok": True})
+
+    @app.route("/push/test", methods=["POST"])
+    @login_required
+    def push_test():
+        uid = session["user_id"]
+        subs = db.list_push_subscriptions(uid)
+        if not subs:
+            return jsonify({
+                "ok": False,
+                "error": "No push subscriptions saved on this account yet. "
+                         "Allow notifications first.",
+            }), 400
+        from push_sender import send_to_subscriptions
+        result = send_to_subscriptions(
+            subs, title="Test notification",
+            body="If you see this, push is working!",
+            url=url_for("dashboard", _external=True),
+        )
+        return jsonify({"ok": True, **result})
+
+    # ----- Cron endpoint -----
+    @app.route("/internal/cron/check-reminders")
+    def cron_check_reminders():
+        token = request.args.get("token", "")
+        expected = os.environ.get("REMINDER_CRON_TOKEN", "")
+        if not expected or token != expected:
+            abort(403)
+        due = db.find_users_due_for_reminder()
+        if not due:
+            return jsonify({"checked": True, "reminders_sent": 0})
+        from push_sender import send_to_subscriptions
+        sent = 0
+        for d in due:
+            subs = db.list_push_subscriptions(d["user_id"])
+            if not subs:
+                continue
+            result = send_to_subscriptions(
+                subs, title="Feeding due soon",
+                body=f"Next feed in about {d['lead_min']} minutes.",
+                url=url_for("dashboard", _external=True),
+            )
+            sent += result.get("sent", 0)
+        return jsonify({"checked": True, "reminders_sent": sent})
 
     @app.route("/healthz")
     def health():
@@ -293,11 +359,9 @@ def create_app() -> Flask:
     return app
 
 
-# ---------- jinja helper ----------
-
 def fmt_minutes(mins):
     if mins is None:
-        return "—"
+        return "--"
     mins = float(mins)
     h = int(mins // 60)
     m = int(round(mins - h * 60))

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Settings &middot; Baby Tracker{% endblock %}
+{% block content %}
+
+<section class="card">
+    <h1>Reminder settings</h1>
+    <form method="post" action="{{ url_for('settings_view') }}" class="stacked-form">
+        <label>Feed every (minutes)
+            <input type="number" name="feed_interval_min"
+                   value="{{ settings.feed_interval_min }}"
+                   min="30" max="720" required>
+        </label>
+        <label>Remind me this many minutes before
+            <input type="number" name="reminder_lead_min"
+                   value="{{ settings.reminder_lead_min }}"
+                   min="0" max="240" required>
+        </label>
+        <label class="checkbox">
+            <input type="checkbox" name="notifications_on"
+                   {% if settings.notifications_on %}checked{% endif %}>
+            <span>Send reminder notifications</span>
+        </label>
+        <button type="submit" class="btn btn-primary">Save settings</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Notifications on this device</h2>
+    <p class="muted">
+        Each device (browser/phone) needs to allow notifications and subscribe
+        once. The same account works on multiple devices — both parents can
+        enable on their own phones.
+    </p>
+    <button id="enable-push" class="btn btn-secondary">
+        Enable notifications on this device
+    </button>
+    <p id="push-status" class="push-status muted">Checking…</p>
+
+    <p class="muted small">
+        This device currently has <strong>{{ subscription_count }}</strong>
+        push subscription{{ 's' if subscription_count != 1 else '' }} on file
+        for your account.
+    </p>
+
+    <button id="test-push" class="btn btn-secondary" style="margin-top: 8px;">
+        Send a test notification
+    </button>
+</section>
+
+<section class="card">
+    <h2>How reminders work</h2>
+    <p>
+        Whenever you log a feed, the next reminder is automatically scheduled
+        for <em>last feed time + feed interval − reminder lead</em>. So if you
+        feed at 2:00pm with a 3-hour interval and 20-minute lead, the reminder
+        fires at 4:40pm.
+    </p>
+    <p>
+        If she eats early, log it and the reminder shifts forward
+        automatically — no manual reset needed.
+    </p>
+</section>
+{% endblock %}

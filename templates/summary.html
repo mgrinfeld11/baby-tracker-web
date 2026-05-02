@@ -4,8 +4,7 @@
 <section class="card">
     <h1>Daily summary</h1>
     <form method="get" action="{{ url_for('summary') }}" class="date-form">
-        <label>
-            Date
+        <label>Date (UTC)
             <input type="date" name="date" value="{{ date_str }}">
         </label>
         <button type="submit" class="btn btn-secondary">Show</button>
@@ -22,7 +21,7 @@
             <div class="metric-num">{{ summary.feed_count }}</div>
             <div class="metric-label">
                 feeds
-                {% if summary.feed_total_ml %}({{ '%.0f' | format(summary.feed_total_ml) }} ml total){% endif %}
+                {% if summary.feed_total_oz %}({{ '%.1f' | format(summary.feed_total_oz) }} oz total){% endif %}
             </div>
         </div>
         <div class="metric">
